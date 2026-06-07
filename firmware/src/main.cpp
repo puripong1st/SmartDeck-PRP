@@ -211,6 +211,10 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length) {
 void setup() {
   Serial.begin(115200);
 
+  // Drive TFT Backlight HIGH (GPIO 27)
+  pinMode(27, OUTPUT);
+  digitalWrite(27, HIGH);
+
   // Initialise screen display & touch
   tft.begin();
   tft.setRotation(1);
