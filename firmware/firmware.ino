@@ -210,7 +210,7 @@ void setup() {
     digitalWrite(27, HIGH);
 
     tft.begin();
-    tft.setRotation(1);
+    tft.setRotation(0);
 
     // Set touchscreen calibration parameters
     uint16_t calData[5] = { 275, 3620, 264, 3532, 1 };
