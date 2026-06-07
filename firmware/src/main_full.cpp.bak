@@ -29,24 +29,12 @@ TFT_eSPI tft = TFT_eSPI(SCREEN_WIDTH, SCREEN_HEIGHT);
 void my_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
   uint32_t w = (area->x2 - area->x1 + 1);
   uint32_t h = (area->y2 - area->y1 + 1);
-  uint16_t *src = (uint16_t *)px_map;
-
-  // This panel's MADCTL MX bit is broken (enabling it shifts the address
-  // window and garbles the grid). So we run the clean rotation 1 (which is
-  // horizontally mirrored) and undo the mirror in software here: draw into
-  // the mirrored X window and reverse each row's pixels.
-  int32_t mx1 = SCREEN_WIDTH - 1 - area->x2; // mirrored left edge
-  static uint16_t rowbuf[SCREEN_WIDTH];
 
   tft.startWrite();
-  tft.setAddrWindow(mx1, area->y1, w, h);
-  for (uint32_t y = 0; y < h; y++) {
-    uint16_t *s = src + y * w;
-    for (uint32_t x = 0; x < w; x++) {
-      rowbuf[x] = s[w - 1 - x];
-    }
-    tft.pushColors(rowbuf, w, true); // swap bytes: LVGL RGB565 LE -> panel BE
-  }
+  tft.setAddrWindow(area->x1, area->y1, w, h);
+  // LVGL 9 already outputs RGB565 in the byte order TFT_eSPI pushes raw,
+  // so do NOT byte-swap here (swapping turns dark navy into bright cyan).
+  tft.pushColors((uint16_t *)px_map, w * h, false);
   tft.endWrite();
 
   lv_display_flush_ready(disp);
@@ -256,7 +244,7 @@ void setup() {
 
   // Initialise screen display & touch
   tft.begin();
-  tft.setRotation(1); // clean addressing; horizontal mirror is undone in my_disp_flush
+  tft.setRotation(3); // 3 = standard landscape, clean addressing (flip device 180)
   tft.fillScreen(TFT_BLACK);
 
   // Set touchscreen calibration parameters

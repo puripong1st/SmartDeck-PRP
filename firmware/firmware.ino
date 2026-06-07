@@ -1,248 +1,286 @@
 #include <Arduino.h>
-#include <WiFi.h>
-#include <WebSocketsClient.h>
 #include <ArduinoJson.h>
-#include <lvgl.h>
 #include <TFT_eSPI.h>
+#include <WebSocketsClient.h>
+#include <WiFi.h>
+#include <lvgl.h>
 
 // Wi-Fi details
 const char *ssid = "true_home2G_0df";
 const char *password = "8dwzuaaw";
 
 // Local Bridge IP and Port
-const char *bridge_ip = "192.168.2.37"; // Update with actual local PC IP// Update with actual local PC IP
+const char *bridge_ip = "192.168.2.37"; // Update with actual local PC IP
 const int bridge_port = 5001;
 
 WebSocketsClient webSocket;
 
-// Screen size
+// LAFVIN 4.0 ESP32-32E display size (ST7796S over 4-wire SPI)
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 480
+#define GRID_ROWS 3
+#define GRID_COLS 4
 
 TFT_eSPI tft = TFT_eSPI(SCREEN_WIDTH, SCREEN_HEIGHT);
 
-// Touch screen configuration (using simulated callbacks for LVGL driver interface)
+// Touch screen configuration (using simulated callbacks for LVGL driver
+// interface)
 void my_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
-    uint32_t w = (area->x2 - area->x1 + 1);
-    uint32_t h = (area->y2 - area->y1 + 1);
+  uint32_t w = (area->x2 - area->x1 + 1);
+  uint32_t h = (area->y2 - area->y1 + 1);
 
-    tft.startWrite();
-    tft.setAddrWindow(area->x1, area->y1, w, h);
-    tft.pushColors((uint16_t *)px_map, w * h, true);
-    tft.endWrite();
+  tft.startWrite();
+  tft.setAddrWindow(area->x1, area->y1, w, h);
+  tft.pushColors((uint16_t *)px_map, w * h, true);
+  tft.endWrite();
 
-    lv_display_flush_ready(disp);
+  lv_display_flush_ready(disp);
 }
 
 void my_touchpad_read(lv_indev_t *indev, lv_indev_data_t *data) {
-    uint16_t touchX = 0, touchY = 0;
-    bool touched = tft.getTouch(&touchX, &touchY);
+  uint16_t touchX = 0, touchY = 0;
+  bool touched = tft.getTouch(&touchX, &touchY);
 
-    if (!touched) {
-        data->state = LV_INDEV_STATE_RELEASED;
-    } else {
-        data->state = LV_INDEV_STATE_PRESSED;
-        data->point.x = touchX;
-        data->point.y = touchY;
-    }
+  if (!touched) {
+    data->state = LV_INDEV_STATE_RELEASED;
+  } else {
+    data->state = LV_INDEV_STATE_PRESSED;
+    data->point.x = touchX;
+    data->point.y = touchY;
+  }
 }
 
 // SmartDeck layout variables
 struct DeckButton {
-    String id;
-    String label;
-    lv_obj_t* btn_obj;
-    lv_obj_t* label_obj;
-    int row;
-    int col;
+  String id;
+  String label;
+  lv_obj_t *btn_obj;
+  lv_obj_t *label_obj;
+  int row;
+  int col;
 };
 
-DeckButton deckButtons[12]; // 3x4 layout grid
+DeckButton deckButtons[GRID_ROWS * GRID_COLS];
 String activeProfileId = "";
 String activePageId = "";
 
-void sendButtonEvent(const String& eventType, const String& buttonId, int row, int col) {
-    JsonDocument doc;
-    doc["protocolVersion"] = 1;
-    doc["id"] = "dev_" + String(millis());
-    doc["type"] = eventType;
-    doc["timestamp"] = "2026-06-07T12:00:00.000Z"; // Simulated timestamp
-    doc["source"] = "device";
-    doc["target"] = "bridge";
+void sendButtonEvent(const String &eventType, const String &buttonId, int row,
+                     int col) {
+  JsonDocument doc;
+  doc["protocolVersion"] = 1;
+  doc["id"] = "dev_" + String(millis());
+  doc["type"] = eventType;
+  doc["timestamp"] = "2026-06-07T12:00:00.000Z"; // Simulated timestamp
+  doc["source"] = "device";
+  doc["target"] = "bridge";
 
-    JsonObject payload = doc["payload"].to<JsonObject>();
-    payload["buttonId"] = buttonId;
-    payload["rowIdx"] = row;
-    payload["colIdx"] = col;
+  JsonObject payload = doc["payload"].to<JsonObject>();
+  payload["buttonId"] = buttonId;
+  payload["rowIdx"] = row;
+  payload["colIdx"] = col;
 
-    String jsonString;
-    serializeJson(doc, jsonString);
-    webSocket.sendTXT(jsonString);
+  String jsonString;
+  serializeJson(doc, jsonString);
+  webSocket.sendTXT(jsonString);
 }
 
-static void btn_event_cb(lv_event_t * e) {
-    lv_event_code_t code = lv_event_get_code(e);
-    DeckButton* btn = (DeckButton*)lv_event_get_user_data(e);
+static void btn_event_cb(lv_event_t *e) {
+  lv_event_code_t code = lv_event_get_code(e);
+  DeckButton *btn = (DeckButton *)lv_event_get_user_data(e);
 
-    if (code == LV_EVENT_PRESSED) {
-        Serial.printf("Pressed button: %s at %d,%d\n", btn->label.c_str(), btn->row, btn->col);
-        sendButtonEvent("button.press", btn->id, btn->row, btn->col);
-    } else if (code == LV_EVENT_RELEASED) {
-        Serial.printf("Released button: %s\n", btn->label.c_str());
-        sendButtonEvent("button.release", btn->id, btn->row, btn->col);
-    }
+  if (code == LV_EVENT_PRESSED) {
+    Serial.printf("Pressed button: %s at %d,%d\n", btn->label.c_str(), btn->row,
+                  btn->col);
+    sendButtonEvent("button.press", btn->id, btn->row, btn->col);
+  } else if (code == LV_EVENT_RELEASED) {
+    Serial.printf("Released button: %s\n", btn->label.c_str());
+    sendButtonEvent("button.release", btn->id, btn->row, btn->col);
+  }
 }
 
 void setupUI() {
-    lv_obj_t *scr = lv_screen_active();
-    lv_obj_clean(scr);
+  lv_obj_t *scr = lv_screen_active();
+  lv_obj_clean(scr);
+  lv_obj_set_style_bg_color(scr, lv_color_hex(0x05070B), 0);
 
-    // Create 3x4 grid using LVGL
-    int btn_w = 70;
-    int btn_h = 70;
-    int gap = 8;
-    int start_x = 10;
-    int start_y = 40;
+  const int gap = 8;
+  const int margin_x = 10;
+  const int top_y = 34;
+  const int bottom_margin = 10;
+  const int btn_w = (SCREEN_WIDTH - (margin_x * 2) - (gap * (GRID_COLS - 1))) / GRID_COLS;
+  const int btn_h = (SCREEN_HEIGHT - top_y - bottom_margin - (gap * (GRID_ROWS - 1))) / GRID_ROWS;
 
-    // Header label
-    lv_obj_t *header = lv_label_create(scr);
-    lv_label_set_text(header, "SmartDeck Pro ESP32");
-    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 10);
+  lv_obj_t *header = lv_label_create(scr);
+  lv_label_set_text(header, "SmartDeck Pro | LAFVIN 4.0");
+  lv_obj_set_style_text_color(header, lv_color_hex(0xE5E7EB), 0);
+  lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 10);
 
-    for (int r = 0; r < 3; r++) {
-        for (int c = 0; c < 4; c++) {
-            int idx = r * 4 + c;
-            DeckButton& db = deckButtons[idx];
-            db.row = r;
-            db.col = c;
-            db.id = "btn_" + String(r) + "_" + String(c);
-            db.label = "";
+  for (int r = 0; r < GRID_ROWS; r++) {
+    for (int c = 0; c < GRID_COLS; c++) {
+      int idx = r * GRID_COLS + c;
+      DeckButton &db = deckButtons[idx];
+      db.row = r;
+      db.col = c;
+      db.id = "btn_" + String(r) + "_" + String(c);
+      db.label = "";
 
-            db.btn_obj = lv_button_create(scr);
-            lv_obj_set_size(db.btn_obj, btn_w, btn_h);
-            lv_obj_set_pos(db.btn_obj, start_x + c * (btn_w + gap), start_y + r * (btn_h + gap));
-            lv_obj_add_event_cb(db.btn_obj, btn_event_cb, LV_EVENT_ALL, &db);
+      db.btn_obj = lv_button_create(scr);
+      lv_obj_set_size(db.btn_obj, btn_w, btn_h);
+      lv_obj_set_pos(db.btn_obj, margin_x + c * (btn_w + gap),
+                     top_y + r * (btn_h + gap));
+      lv_obj_set_style_bg_color(db.btn_obj, lv_color_hex(0x12233A), 0);
+      lv_obj_set_style_border_color(db.btn_obj, lv_color_hex(0x3B82F6), 0);
+      lv_obj_set_style_border_width(db.btn_obj, 1, 0);
+      lv_obj_set_style_radius(db.btn_obj, 8, 0);
+      lv_obj_set_style_pad_all(db.btn_obj, 4, 0);
+      lv_obj_add_event_cb(db.btn_obj, btn_event_cb, LV_EVENT_ALL, &db);
 
-            db.label_obj = lv_label_create(db.btn_obj);
-            lv_label_set_text(db.label_obj, "");
-            lv_obj_center(db.label_obj);
-        }
+      db.label_obj = lv_label_create(db.btn_obj);
+      lv_label_set_text(db.label_obj, "");
+      lv_label_set_long_mode(db.label_obj, LV_LABEL_LONG_WRAP);
+      lv_obj_set_width(db.label_obj, btn_w - 8);
+      lv_obj_set_style_text_align(db.label_obj, LV_TEXT_ALIGN_CENTER, 0);
+      lv_obj_set_style_text_color(db.label_obj, lv_color_hex(0xF9FAFB), 0);
+      lv_obj_center(db.label_obj);
     }
+  }
 }
 
-void parseProfileSync(const JsonObject& payload) {
-    JsonObject activeProfile = payload["activeProfile"];
-    activeProfileId = activeProfile["id"].as<String>();
-    
-    JsonArray pages = activeProfile["pages"];
-    if (pages.size() > 0) {
-        JsonObject firstPage = pages[0];
-        activePageId = firstPage["id"].as<String>();
-        JsonArray buttons = firstPage["buttons"];
+void parseProfileSync(const JsonObject &payload) {
+  JsonObject activeProfile = payload["activeProfile"];
+  if (activeProfile.isNull()) {
+    return;
+  }
 
-        for (JsonObject btn : buttons) {
-            int r = btn["rowIdx"];
-            int c = btn["colIdx"];
-            int idx = r * 4 + c;
-            if (idx >= 0 && idx < 12) {
-                deckButtons[idx].id = btn["id"].as<String>();
-                deckButtons[idx].label = btn["label"].as<String>();
-                if (deckButtons[idx].label_obj) {
-                    lv_label_set_text(deckButtons[idx].label_obj, deckButtons[idx].label.c_str());
-                }
-            }
-        }
+  activeProfileId = activeProfile["id"].as<String>();
+
+  JsonArray pages = activeProfile["pages"];
+  if (pages.size() > 0) {
+    JsonObject firstPage = pages[0];
+    activePageId = firstPage["id"].as<String>();
+    JsonArray buttons = firstPage["buttons"];
+
+    for (int i = 0; i < GRID_ROWS * GRID_COLS; i++) {
+      deckButtons[i].id = "btn_" + String(deckButtons[i].row) + "_" + String(deckButtons[i].col);
+      deckButtons[i].label = "";
+      if (deckButtons[i].label_obj) {
+        lv_label_set_text(deckButtons[i].label_obj, "");
+      }
     }
+
+    for (JsonObject btn : buttons) {
+      int r = btn["rowIdx"];
+      int c = btn["colIdx"];
+      int idx = r * GRID_COLS + c;
+      if (r >= 0 && r < GRID_ROWS && c >= 0 && c < GRID_COLS && idx >= 0 && idx < GRID_ROWS * GRID_COLS) {
+        deckButtons[idx].id = btn["id"].as<String>();
+        deckButtons[idx].label = btn["label"].as<String>();
+        if (deckButtons[idx].label_obj) {
+          lv_label_set_text(deckButtons[idx].label_obj,
+                            deckButtons[idx].label.c_str());
+        }
+      }
+    }
+  }
 }
 
-void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
-    switch(type) {
-        case WStype_DISCONNECTED:
-            Serial.println("[WS] Disconnected!");
-            break;
-        case WStype_CONNECTED:
-            Serial.printf("[WS] Connected to URL: %s\n", payload);
-            // Announce device status
-            {
-                JsonDocument doc;
-                doc["protocolVersion"] = 1;
-                doc["id"] = "dev_hello";
-                doc["type"] = "device.hello";
-                doc["timestamp"] = "2026-06-07T12:00:00.000Z";
-                doc["source"] = "device";
-                doc["target"] = "bridge";
+void webSocketEvent(WStype_t type, uint8_t *payload, size_t length) {
+  switch (type) {
+  case WStype_DISCONNECTED:
+    Serial.println("[WS] Disconnected!");
+    break;
+  case WStype_CONNECTED:
+    Serial.printf("[WS] Connected to URL: %s\n", payload);
+    // Announce device status
+    {
+      JsonDocument doc;
+      doc["protocolVersion"] = 1;
+      doc["id"] = "dev_hello";
+      doc["type"] = "device.hello";
+      doc["timestamp"] = "2026-06-07T12:00:00.000Z";
+      doc["source"] = "device";
+      doc["target"] = "bridge";
 
-                JsonObject p = doc["payload"].to<JsonObject>();
-                p["deviceId"] = "esp32_s3_hardware_v1";
-                p["firmwareVersion"] = "1.0.0";
-                p["hardwareModel"] = "ESP32-S3 LAFVIN 4.0";
-                p["gridRows"] = 3;
-                p["gridCols"] = 4;
+      JsonObject p = doc["payload"].to<JsonObject>();
+      p["deviceId"] = "lafvin_esp32_32e_4in_v1";
+      p["firmwareVersion"] = "1.0.0";
+      p["hardwareModel"] = "LAFVIN 4.0 ESP32-32E ST7796S";
+      p["gridRows"] = GRID_ROWS;
+      p["gridCols"] = GRID_COLS;
 
-                String out;
-                serializeJson(doc, out);
-                webSocket.sendTXT(out);
-            }
-            break;
-        case WStype_TEXT:
-            Serial.printf("[WS] Received text: %s\n", payload);
-            {
-                JsonDocument doc;
-                DeserializationError error = deserializeJson(doc, payload);
-                if (!error) {
-                    String type = doc["type"].as<String>();
-                    if (type == "profile.sync") {
-                        parseProfileSync(doc["payload"].as<JsonObject>());
-                    }
-                }
-            }
-            break;
-        case WStype_BIN:
-            break;
+      String out;
+      serializeJson(doc, out);
+      webSocket.sendTXT(out);
     }
+    break;
+  case WStype_TEXT:
+    Serial.printf("[WS] Received text: %s\n", payload);
+    {
+      JsonDocument doc;
+      DeserializationError error = deserializeJson(doc, payload);
+      if (!error) {
+        String type = doc["type"].as<String>();
+        if (type == "profile.sync") {
+          parseProfileSync(doc["payload"].as<JsonObject>());
+        }
+      }
+    }
+    break;
+  case WStype_BIN:
+    // Bin payload represents assets/images
+    break;
+  }
 }
 
 void setup() {
-    Serial.begin(115200);
+  Serial.begin(115200);
 
-    // Drive TFT Backlight HIGH (GPIO 27)
-    pinMode(27, OUTPUT);
-    digitalWrite(27, HIGH);
+  // Drive TFT Backlight HIGH (GPIO 27)
+  pinMode(27, OUTPUT);
+  digitalWrite(27, HIGH);
 
-    tft.begin();
-    tft.setRotation(0);
+  // Initialise screen display & touch
+  tft.begin();
+  tft.setRotation(0);
+  tft.fillScreen(TFT_BLACK);
 
-    // Set touchscreen calibration parameters
-    uint16_t calData[5] = { 275, 3620, 264, 3532, 1 };
-    tft.setTouch(calData);
+  // Set touchscreen calibration parameters
+  uint16_t calData[5] = { 275, 3620, 264, 3532, 1 };
+  tft.setTouch(calData);
 
-    lv_init();
-    
-    static uint16_t buf[SCREEN_WIDTH * 10];
-    lv_display_t * disp = lv_display_create(SCREEN_WIDTH, SCREEN_HEIGHT);
-    lv_display_set_buffers(disp, buf, NULL, sizeof(buf), LV_DISPLAY_RENDER_MODE_PARTIAL);
-    lv_display_set_flush_cb(disp, my_disp_flush);
+  lv_init();
 
-    lv_indev_t * indev = lv_indev_create();
-    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
-    lv_indev_set_read_cb(indev, my_touchpad_read);
+  // Set display buffer and register flush callbacks for LVGL 9
+  static uint16_t buf[SCREEN_WIDTH * 10];
+  lv_display_t *disp = lv_display_create(SCREEN_WIDTH, SCREEN_HEIGHT);
+  lv_display_set_buffers(disp, buf, NULL, sizeof(buf),
+                         LV_DISPLAY_RENDER_MODE_PARTIAL);
+  lv_display_set_flush_cb(disp, my_disp_flush);
 
-    setupUI();
+  // Register input touchpad callbacks
+  lv_indev_t *indev = lv_indev_create();
+  lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+  lv_indev_set_read_cb(indev, my_touchpad_read);
 
-    WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-    Serial.println("\nWiFi Connected!");
+  setupUI();
 
-    webSocket.begin(bridge_ip, bridge_port, "/events");
-    webSocket.onEvent(webSocketEvent);
-    webSocket.setReconnectInterval(3000);
+  // WiFi Setup
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi Connected!");
+
+  // WebSocket Setup
+  webSocket.begin(bridge_ip, bridge_port, "/events");
+  webSocket.onEvent(webSocketEvent);
+  webSocket.setReconnectInterval(3000);
 }
 
 void loop() {
-    lv_timer_handler();
-    webSocket.loop();
-    delay(5);
+  lv_tick_inc(5);
+  lv_timer_handler(); // let LVGL run UI ticks
+  webSocket.loop();   // run WS event loop
+  delay(5);
 }

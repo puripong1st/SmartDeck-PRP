@@ -7,6 +7,63 @@ import { PROTOCOL_VERSION } from '@smartdeck/protocol';
 
 const router = Router();
 
+function mapActionRow(act: any) {
+  return {
+    id: act.id,
+    actionType: act.action_type,
+    action_type: act.action_type,
+    payload: JSON.parse(act.payload),
+    sequenceOrder: act.sequence_order,
+    sequence_order: act.sequence_order,
+    delayMs: act.delay_ms,
+    delay_ms: act.delay_ms,
+  };
+}
+
+function mapButtonRow(btn: any, actions: any[] = []) {
+  return {
+    id: btn.id,
+    rowIdx: btn.row_idx,
+    colIdx: btn.col_idx,
+    label: btn.label || '',
+    iconAssetId: btn.icon_asset_id || '',
+    actions,
+  };
+}
+
+async function loadFullProfile(profileId: string) {
+  const db = await getDb();
+  const profile = await db.get('SELECT * FROM profiles WHERE id = ?', [profileId]);
+  if (!profile) return null;
+
+  const pages = await db.all('SELECT * FROM pages WHERE profile_id = ? ORDER BY page_index ASC', [profileId]);
+  const fullPages = [];
+
+  for (const page of pages) {
+    const buttons = await db.all('SELECT * FROM buttons WHERE page_id = ? ORDER BY row_idx, col_idx ASC', [page.id]);
+    const mappedButtons = [];
+
+    for (const btn of buttons) {
+      const actions = await db.all('SELECT * FROM actions WHERE button_id = ? ORDER BY sequence_order ASC', [btn.id]);
+      mappedButtons.push(mapButtonRow(btn, actions.map(mapActionRow)));
+    }
+
+    fullPages.push({
+      id: page.id,
+      name: page.name,
+      pageIndex: page.page_index,
+      buttons: mappedButtons,
+    });
+  }
+
+  return {
+    id: profile.id,
+    name: profile.name,
+    isFallback: !!profile.is_fallback,
+    pages: fullPages,
+  };
+}
+
 // Middleware to validate pairing token
 async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   if (req.path === '/health' || req.path === '/pairing/start' || req.path === '/pairing/confirm') {
@@ -112,38 +169,10 @@ router.post('/profiles', async (req, res) => {
 
 router.get('/profiles/:profileId', async (req, res) => {
   const { profileId } = req.params;
-  const db = await getDb();
-  const profile = await db.get('SELECT * FROM profiles WHERE id = ?', [profileId]);
+  const profile = await loadFullProfile(profileId);
   if (!profile) return res.status(404).json({ error: 'Profile not found' });
 
-  const pages = await db.all('SELECT * FROM pages WHERE profile_id = ? ORDER BY page_index ASC', [profileId]);
-  const fullPages = [];
-
-  for (const page of pages) {
-    const buttons = await db.all('SELECT * FROM buttons WHERE page_id = ? ORDER BY row_idx, col_idx ASC', [page.id]);
-    const buttonsWithActions = [];
-
-    for (const btn of buttons) {
-      const actions = await db.all('SELECT * FROM actions WHERE button_id = ? ORDER BY sequence_order ASC', [btn.id]);
-      buttonsWithActions.push({
-        ...btn,
-        actions: actions.map(act => ({
-          ...act,
-          payload: JSON.parse(act.payload)
-        }))
-      });
-    }
-
-    fullPages.push({
-      ...page,
-      buttons: buttonsWithActions
-    });
-  }
-
-  res.json({
-    ...profile,
-    pages: fullPages
-  });
+  res.json(profile);
 });
 
 router.put('/profiles/:profileId', async (req, res) => {
@@ -166,7 +195,7 @@ router.put('/profiles/:profileId', async (req, res) => {
         for (const btn of page.buttons) {
           await db.run(
             'UPDATE buttons SET label = ?, icon_asset_id = ?, updated_at = ? WHERE id = ?',
-            [btn.label, btn.iconAssetId || null, now, btn.id]
+            [btn.label || '', btn.iconAssetId || btn.icon_asset_id || null, now, btn.id]
           );
 
           // Clear and recreate actions
