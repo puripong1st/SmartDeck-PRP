@@ -37,7 +37,7 @@ void my_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
 
 void my_touchpad_read(lv_indev_t *indev, lv_indev_data_t *data) {
   uint16_t touchX = 0, touchY = 0;
-  bool touched = false; // Mock capacitive touch reading
+  bool touched = tft.getTouch(&touchX, &touchY);
 
   if (!touched) {
     data->state = LV_INDEV_STATE_RELEASED;
@@ -218,6 +218,10 @@ void setup() {
   // Initialise screen display & touch
   tft.begin();
   tft.setRotation(1);
+
+  // Set touchscreen calibration parameters
+  uint16_t calData[5] = { 275, 3620, 264, 3532, 1 };
+  tft.setTouch(calData);
 
   lv_init();
 
