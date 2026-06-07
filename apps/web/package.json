@@ -1,0 +1,27 @@
+{
+  "name": "@smartdeck/web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "^15.0.3",
+    "react": "^19.0.0-rc-6623190c69-20241112",
+    "react-dom": "^19.0.0-rc-6623190c69-20241112",
+    "lucide-react": "^0.460.0",
+    "zod": "^3.23.8",
+    "@smartdeck/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "@types/node": "^22.9.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tailwindcss": "^3.4.15",
+    "postcss": "^8.4.49",
+    "autoprefixer": "^10.4.20"
+  }
+}

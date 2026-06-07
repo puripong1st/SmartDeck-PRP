@@ -1,0 +1,12 @@
+{
+  "name": "smartdeck-pro-monorepo",
+  "private": true,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "dev": "npx pnpm --filter @smartdeck/web dev",
+    "build": "npx pnpm -r build",
+    "test": "npx pnpm -r test"
+  }
+}
