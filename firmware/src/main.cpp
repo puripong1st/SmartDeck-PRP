@@ -36,8 +36,8 @@ void my_disp_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
 }
 
 void my_touchpad_read(lv_indev_t *indev, lv_indev_data_t *data) {
-  uint16_t touchX, touchY;
-  bool touched = tft.getTouch(&touchX, &touchY);
+  uint16_t touchX = 0, touchY = 0;
+  bool touched = false; // Mock capacitive touch reading
 
   if (!touched) {
     data->state = LV_INDEV_STATE_RELEASED;
