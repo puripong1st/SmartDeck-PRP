@@ -36,11 +36,11 @@ async function main() {
       broadcastProfileChange(profileId);
     });
 
-    server.listen(PORT, '127.0.0.1', () => {
+    server.listen(PORT, '0.0.0.0', () => {
       console.log(`=========================================`);
       console.log(` SmartDeck Pro Local Bridge Running      `);
       console.log(` Port: ${PORT}                            `);
-      console.log(` Address: http://127.0.0.1:${PORT}        `);
+      console.log(` Address: http://0.0.0.0:${PORT}        `);
       console.log(`=========================================`);
     });
   } catch (err) {
